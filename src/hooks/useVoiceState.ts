@@ -142,6 +142,14 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
       recognition.onstart = () => {
         recognitionStartingRef.current = false;
         recognitionActiveRef.current = true;
+        if (!shouldListenRef.current || wakePausedRef.current) {
+          try {
+            recognition.abort();
+          } catch {
+            // The pending recognition session may already have ended.
+          }
+          return;
+        }
         setStatus('LISTENING');
         setVoiceError('');
       };
@@ -249,7 +257,6 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const interrupt = useCallback(() => {
     shouldListenRef.current = false;
-    recognitionStartingRef.current = false;
     wakePausedRef.current = false;
     if (restartTimerRef.current !== null) {
       window.clearTimeout(restartTimerRef.current);
@@ -307,7 +314,6 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const stopListening = useCallback(() => {
     shouldListenRef.current = false;
-    recognitionStartingRef.current = false;
     wakePausedRef.current = false;
     if (restartTimerRef.current !== null) {
       window.clearTimeout(restartTimerRef.current);
@@ -466,5 +472,6 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
     stopSpeaking,
     interrupt,
     speak,
+    resumeWakeListening,
   };
 }

@@ -242,6 +242,7 @@ function App() {
         await voice.speak(result.answer, true);
       } else {
         voice.setStatus('IDLE');
+        voice.resumeWakeListening();
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
