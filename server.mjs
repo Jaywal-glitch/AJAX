@@ -245,7 +245,7 @@ async function callGemini({ newsContext, intent, message, history, clientContext
     throw new Error('GEMINI_API_KEY is not configured on the server.');
   }
 
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
 
   const system = [
