@@ -33,6 +33,31 @@ function splitIntoChunks(text, maxLength = 180) {
   return chunks;
 }
 
+function escapeSsml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function generateAzureBritishMaleAudio(text) {
+  const key = process.env.AZURE_SPEECH_KEY;
+  const region = process.env.AZURE_SPEECH_REGION;
+  if (!key || !region) return null;
+
+  const voice = process.env.AZURE_TTS_VOICE || 'en-GB-RyanNeural';
+  const response = await fetch(`https://${encodeURIComponent(region)}.tts.speech.microsoft.com/cognitiveservices/v1`, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': key,
+      'Content-Type': 'application/ssml+xml',
+      'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+      'User-Agent': 'AJAX',
+    },
+    body: `<speak version="1.0" xml:lang="en-GB"><voice name="${voice}"><prosody rate="-5%" pitch="-2%">${escapeSsml(text)}</prosody></voice></speak>`,
+  });
+
+  if (!response.ok) throw new Error(`Azure TTS provider returned HTTP ${response.status}`);
+  return Buffer.from(await response.arrayBuffer());
+}
+
 export async function generateBritishAudio(text) {
   const cleaned = cleanTextForSpeech(text);
   if (!cleaned) {
@@ -41,6 +66,12 @@ export async function generateBritishAudio(text) {
 
   if (ttsCache.has(cleaned)) {
     return ttsCache.get(cleaned);
+  }
+
+  const azureAudio = await generateAzureBritishMaleAudio(cleaned);
+  if (azureAudio) {
+    ttsCache.set(cleaned, azureAudio);
+    return azureAudio;
   }
 
   const chunks = splitIntoChunks(cleaned, 180);

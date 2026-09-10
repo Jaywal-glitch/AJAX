@@ -49,6 +49,7 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const recognitionActiveRef = useRef(false);
+  const recognitionStartingRef = useRef(false);
   const shouldListenRef = useRef(false);
   const wakePausedRef = useRef(false);
   const restartTimerRef = useRef<number | null>(null);
@@ -70,7 +71,7 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const activeBlobUrlRef = useRef<string | null>(null);
-  const speakFallbackRef = useRef<(cleanText: string) => Promise<void>>(() => Promise.resolve());
+  const speakRef = useRef<(text: string, force?: boolean) => Promise<void>>(() => Promise.resolve());
 
   // Persist settings
   useEffect(() => {
@@ -134,11 +135,12 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
     if (speechCtor) {
       setVoiceSupported(true);
       const recognition = new speechCtor();
-      recognition.lang = 'en-US';
+      recognition.lang = 'en-GB';
       recognition.continuous = false;
       recognition.interimResults = false;
 
       recognition.onstart = () => {
+        recognitionStartingRef.current = false;
         recognitionActiveRef.current = true;
         setStatus('LISTENING');
         setVoiceError('');
@@ -156,6 +158,11 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
         // Push-to-Talk mode: directly accept whatever user spoke
         if (mode === 'push-to-talk') {
           shouldListenRef.current = false;
+          try {
+            recognition.stop();
+          } catch {
+            // Recognition can already be ending after a result.
+          }
           setStatus('THINKING');
           onCommandRef.current(transcript);
           return;
@@ -168,13 +175,15 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
         }
 
         const command = extractCommandFromWakeWord(transcript);
+        wakePausedRef.current = true;
+        try {
+          recognition.stop();
+        } catch {
+          // Recognition can already be ending after a result.
+        }
         if (!command) {
-          wakePausedRef.current = true;
           if (autoSpeakRef.current && !isMutedRef.current) {
-            void speakFallbackRef.current('Yes?').finally(() => {
-              wakePausedRef.current = false;
-              startRecognitionRef.current();
-            });
+            void speakRef.current('Yes?', true);
           } else {
             wakePausedRef.current = false;
             startRecognitionRef.current();
@@ -182,12 +191,15 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
           return;
         }
 
-        wakePausedRef.current = true;
         setStatus('THINKING');
         onCommandRef.current(command);
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          shouldListenRef.current = false;
+          wakePausedRef.current = false;
+        }
         if (event.error !== 'no-speech' && event.error !== 'aborted') {
           setStatus('ERROR');
           setVoiceError(`Voice input: ${event.error || 'unavailable'}`);
@@ -196,7 +208,8 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
       recognition.onend = () => {
         recognitionActiveRef.current = false;
-        if (shouldListenRef.current && !wakePausedRef.current) {
+        recognitionStartingRef.current = false;
+        if (shouldListenRef.current && currentModeRef.current === 'wake-word' && !wakePausedRef.current) {
           restartTimerRef.current = window.setTimeout(() => startRecognitionRef.current(), 150);
         } else {
           setStatus((prev) => (prev === 'LISTENING' ? 'IDLE' : prev));
@@ -209,6 +222,7 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
     }
     return () => {
       shouldListenRef.current = false;
+      recognitionStartingRef.current = false;
       if (restartTimerRef.current !== null) window.clearTimeout(restartTimerRef.current);
       recognitionRef.current?.abort();
     };
@@ -235,6 +249,7 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const interrupt = useCallback(() => {
     shouldListenRef.current = false;
+    recognitionStartingRef.current = false;
     wakePausedRef.current = false;
     if (restartTimerRef.current !== null) {
       window.clearTimeout(restartTimerRef.current);
@@ -252,10 +267,12 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const startRecognition = useCallback(() => {
     const recognition = recognitionRef.current;
-    if (!shouldListenRef.current || !recognition || recognitionActiveRef.current) return;
+    if (!shouldListenRef.current || !recognition || recognitionActiveRef.current || recognitionStartingRef.current) return;
     try {
+      recognitionStartingRef.current = true;
       recognition.start();
     } catch (error) {
+      recognitionStartingRef.current = false;
       const message = error instanceof Error ? error.message : 'unavailable';
       if (!/already started/i.test(message)) {
         setStatus('ERROR');
@@ -290,6 +307,7 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
 
   const stopListening = useCallback(() => {
     shouldListenRef.current = false;
+    recognitionStartingRef.current = false;
     wakePausedRef.current = false;
     if (restartTimerRef.current !== null) {
       window.clearTimeout(restartTimerRef.current);
@@ -336,8 +354,6 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
     });
   }, []);
 
-  speakFallbackRef.current = speakFallback;
-
   const resumeWakeListening = useCallback(() => {
     if (wakePausedRef.current && currentModeRef.current === 'wake-word') {
       wakePausedRef.current = false;
@@ -359,6 +375,15 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
       if (!cleanText) return;
 
       stopSpeaking();
+      if (recognitionActiveRef.current || recognitionStartingRef.current) {
+        wakePausedRef.current = currentModeRef.current === 'wake-word';
+        recognitionStartingRef.current = false;
+        try {
+          recognitionRef.current?.stop();
+        } catch {
+          // Recognition can already be ending.
+        }
+      }
       setLastSpokenText(cleanText);
       setStatus('SPEAKING');
 
@@ -412,6 +437,8 @@ export function useVoiceState({ onCommand, onAudioElement }: UseVoiceStateOption
     },
     [resumeWakeListening, speakFallback, stopSpeaking]
   );
+
+  speakRef.current = speak;
 
   return {
     status,
