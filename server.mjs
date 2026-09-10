@@ -473,8 +473,9 @@ app.get('/api/health', (_, res) => {
 
 export { app };
 
-const directServerPath = fileURLToPath(import.meta.url);
-const isDirectEntry = process.argv[1] ? path.resolve(process.argv[1]) === path.resolve(directServerPath) : false;
+const isDirectEntry = typeof import.meta.url === 'string' && typeof process.argv[1] === 'string'
+  ? path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
+  : false;
 if (isDirectEntry) {
   app.listen(port, () => {
     console.log(`AJAX backend listening on http://localhost:${port}`);
