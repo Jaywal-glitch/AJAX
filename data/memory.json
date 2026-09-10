@@ -1,0 +1,24 @@
+[
+  {
+    "id": "mem-1",
+    "content": "User prefers concise, source-grounded answers with focus on AI/ML architectures and systems.",
+    "category": "preference",
+    "tags": [
+      "ai",
+      "concise",
+      "architecture"
+    ],
+    "createdAt": "2026-09-10T04:48:51.548Z"
+  },
+  {
+    "id": "mem-2",
+    "content": "Active project: Developing AJAX as a voice-first personal AI intelligence assistant.",
+    "category": "project",
+    "tags": [
+      "ajax",
+      "voice",
+      "assistant"
+    ],
+    "createdAt": "2026-09-10T04:48:51.549Z"
+  }
+]
